@@ -288,4 +288,130 @@ class DeltaLogTests {
             log.write(-1, actions);
         }, "Should throw exception for negative version");
     }
+
+    @Test
+    public void testSnapshotWithNoVersions() throws IOException {
+        // Setup
+        String tablePath = "emptySnapshotTable";
+        var log = new DeltaLog(storage, tablePath);
+        
+        // Get snapshot of empty table
+        Snapshot snapshot = log.snapshot();
+        
+        // Verify
+        assertEquals(-1, snapshot.getVersion(), "Empty table should have version -1");
+        assertTrue(snapshot.getActions().isEmpty(), "Empty table should have no actions");
+        assertTrue(snapshot.getAllFiles().isEmpty(), "Empty table should have no files");
+    }
+    
+    @Test
+    public void testSnapshotWithSingleVersion() throws IOException {
+        // Setup
+        String tablePath = "singleVersionTable";
+        var log = new DeltaLog(storage, tablePath);
+        
+        // Create a version
+        AddFile addAction = new AddFile("data/file1.parquet", 1024, System.currentTimeMillis());
+        log.write(0, Collections.singletonList(addAction));
+        
+        // Get snapshot
+        Snapshot snapshot = log.snapshot();
+        
+        // Verify
+        assertEquals(0, snapshot.getVersion(), "Snapshot should have version 0");
+        assertEquals(1, snapshot.getActions().size(), "Snapshot should have one action");
+        assertEquals(1, snapshot.getAllFiles().size(), "Snapshot should have one file");
+        assertEquals("data/file1.parquet", snapshot.getAllFiles().get(0).getPath(), 
+                     "File path should match");
+    }
+    
+    @Test
+    public void testSnapshotWithMultipleVersions() throws IOException {
+        // Setup
+        String tablePath = "multiVersionTable";
+        var log = new DeltaLog(storage, tablePath);
+        
+        // Create version 0
+        AddFile addAction1 = new AddFile("data/file1.parquet", 1024, System.currentTimeMillis());
+        log.write(0, Collections.singletonList(addAction1));
+        
+        // Create version 1
+        AddFile addAction2 = new AddFile("data/file2.parquet", 2048, System.currentTimeMillis());
+        log.write(1, Collections.singletonList(addAction2));
+        
+        // Get snapshot - should reflect all versions combined
+        Snapshot snapshot = log.snapshot();
+        
+        // Verify
+        assertEquals(1, snapshot.getVersion(), "Snapshot should have latest version (1)");
+        assertEquals(2, snapshot.getActions().size(), "Snapshot should have actions from all versions");
+        assertEquals(2, snapshot.getAllFiles().size(), "Snapshot should have files from all versions");
+        
+        // Verify contents from both versions are present
+        List<String> filePaths = snapshot.getAllFiles().stream()
+            .map(AddFile::getPath)
+            .collect(java.util.stream.Collectors.toList());
+        
+        assertTrue(filePaths.contains("data/file1.parquet"), "Should contain file from version 0");
+        assertTrue(filePaths.contains("data/file2.parquet"), "Should contain file from version 1");
+    }
+    
+    @Test
+    public void testUpdate() throws IOException {
+        // Setup
+        String tablePath = "updateTable";
+        var log = new DeltaLog(storage, tablePath);
+        
+        // Create a version
+        AddFile addAction = new AddFile("data/file1.parquet", 1024, System.currentTimeMillis());
+        log.write(0, Collections.singletonList(addAction));
+        
+        // Get updated snapshot
+        Snapshot snapshot1 = log.update();
+        
+        // Verify
+        assertEquals(0, snapshot1.getVersion(), "Updated snapshot should have version 0");
+        assertEquals(1, snapshot1.getActions().size(), "Updated snapshot should have one action");
+        assertEquals(1, snapshot1.getAllFiles().size(), "Updated snapshot should have one file");
+        
+        // Call update again without changing the version
+        Snapshot snapshot2 = log.update();
+        
+        // Should be the same object instance (cached)
+        assertSame(snapshot1, snapshot2, "Should return cached snapshot when version hasn't changed");
+        
+        // Create another version
+        AddFile addAction2 = new AddFile("data/file2.parquet", 2048, System.currentTimeMillis());
+        log.write(1, Collections.singletonList(addAction2));
+        
+        // Update again - should get a new snapshot
+        Snapshot snapshot3 = log.update();
+        
+        // Should be a different object with updated version
+        assertNotSame(snapshot2, snapshot3, "Should create new snapshot when version has changed");
+        assertEquals(1, snapshot3.getVersion(), "New snapshot should have updated version");
+        assertEquals(2, snapshot3.getActions().size(), "New snapshot should include actions from all versions");
+    }
+    
+    @Test
+    public void testLocking() throws IOException {
+        // Setup
+        String tablePath = "lockingTable";
+        var log = new DeltaLog(storage, tablePath);
+        
+        // Test acquiring and releasing lock
+        log.lock();
+        
+        // Write while holding the lock
+        AddFile addAction = new AddFile("data/locked-file.parquet", 1024, System.currentTimeMillis());
+        log.write(0, Collections.singletonList(addAction));
+        
+        // Release the lock
+        log.releaseLock();
+        
+        // Verify we can still read what we wrote
+        Snapshot snapshot = log.snapshot();
+        assertEquals(0, snapshot.getVersion(), "Should read version written under lock");
+        assertEquals(1, snapshot.getAllFiles().size(), "Should have the file we wrote under lock");
+    }
 }

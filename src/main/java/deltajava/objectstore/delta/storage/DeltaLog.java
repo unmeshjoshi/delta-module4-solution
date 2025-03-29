@@ -28,7 +28,11 @@ public class DeltaLog {
     private final ReentrantLock deltaLogLock = new ReentrantLock();
     private final Storage storage;
     private final String tablePath;
-
+    
+    /**
+     * Currently loaded snapshot
+     */
+    private Snapshot currentSnapshot;
 
     /**
      * Creates a DeltaLog for the specified table path.
@@ -43,6 +47,13 @@ public class DeltaLog {
         }
         this.logPath = tablePath + "_delta_log/";
         this.dataPath = tablePath + "data/";
+        
+        // Initialize with an empty snapshot
+        try {
+            this.currentSnapshot = new Snapshot(this, -1, Collections.emptyList());
+        } catch (Exception e) {
+            // Ignore and keep null snapshot, it will be initialized on first access
+        }
     }
 
     public String getLogPath() {
@@ -63,7 +74,7 @@ public class DeltaLog {
         return Collections.max(versions);
     }
 
-    public OptimisticTransaction startTransaction() {
+    public OptimisticTransaction startTransaction() throws IOException {
         return new OptimisticTransaction(storage, tablePath);
     }
 
@@ -75,8 +86,45 @@ public class DeltaLog {
         storage.writeObject(logFileName, JsonUtil.toJson(actions).getBytes());
     }
 
-    public Snapshot update() {
-        return null;
+    public Snapshot snapshot() throws IOException {
+        long latestVersion = getLatestVersion();
+        if (latestVersion < 0) {
+            // Empty snapshot for empty log
+            return new Snapshot(this, -1, Collections.emptyList());
+        }
+        
+        List<Action> allActions = new ArrayList<>();
+        
+        // Read actions from all versions to construct complete state
+        List<Long> versions = listVersions();
+        Collections.sort(versions); // Process versions in order
+        
+        for (Long version : versions) {
+            Collection<Action> versionActions = readVersion(version);
+            allActions.addAll(versionActions);
+        }
+        
+        return new Snapshot(this, latestVersion, allActions);
+    }
+
+    public Snapshot update() throws IOException {
+        try {
+            deltaLogLock.lock();
+
+            // Get the latest version
+            long latestVersion = getLatestVersion();
+
+            // If no change or no log files exist yet, return current snapshot
+            if (currentSnapshot != null && latestVersion == currentSnapshot.getVersion()) {
+                return currentSnapshot;
+            }
+
+            // Create a new snapshot with the complete state
+            currentSnapshot = snapshot();
+            return currentSnapshot;
+        } finally {
+            deltaLogLock.unlock();
+        }
     }
 
     public List<Long> listVersions() {
@@ -103,19 +151,29 @@ public class DeltaLog {
         return versions;
     }
 
-    public Collection<? extends Action> readVersion(Long version) {
-        return null;
-    }
-
-    public Snapshot snapshot() {
-        return null;
+    public Collection<Action> readVersion(Long version) throws IOException {
+        if (version == null || version < 0) {
+            throw new IllegalArgumentException("Version must be a non-negative number");
+        }
+        
+        String logFileName = LogFileName.fromVersion(version).getPathIn(logPath);
+        
+        try {
+            byte[] data = storage.readObject(logFileName);
+            String json = new String(data);
+            return JsonUtil.jsonToActions(json);
+        } catch (IOException e) {
+            throw new IOException("Failed to read version " + version, e);
+        }
     }
 
     public void lock() {
-
+        deltaLogLock.lock();
     }
 
     public void releaseLock() {
-
+        if (deltaLogLock.isHeldByCurrentThread()) {
+            deltaLogLock.unlock();
+        }
     }
 }

@@ -52,7 +52,7 @@ public class OptimisticTransaction extends Transaction {
      *
      * @param tablePath the path to the Delta table
      */
-    public OptimisticTransaction(Storage storage, String tablePath) {
+    public OptimisticTransaction(Storage storage, String tablePath) throws IOException {
         this(storage, tablePath, IsolationLevel.SERIALIZABLE, 3);
     }
 
@@ -63,7 +63,7 @@ public class OptimisticTransaction extends Transaction {
      * @param isolationLevel the isolation level to use
      * @param maxRetryCount  the maximum number of times to retry on conflict
      */
-    public OptimisticTransaction(Storage storage, String tablePath, IsolationLevel isolationLevel, int maxRetryCount) {
+    public OptimisticTransaction(Storage storage, String tablePath, IsolationLevel isolationLevel, int maxRetryCount) throws IOException {
         super(storage, tablePath);
         this.storage = storage;
         this.isolationLevel = isolationLevel;
