@@ -3,11 +3,11 @@
 ## Example Implementation Flow (TDD Approach)
 
 ### 1. Storage Interface Implementation
-- [ ] Create Storage interface
-- [ ] Implement ObjectStorage class
-- [ ] Test method to read/write objects
-- [ ] Test path resolution
-- [ ] Test metadata handling
+- [x] Create Storage interface
+- [x] Implement ObjectStorage class
+- [x] Test method to read/write objects
+- [x] Test path resolution
+- [x] Test metadata handling
 
 ### 2. DeltaLog Implementation
 - [ ] Implement DeltaLog class
