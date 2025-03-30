@@ -6,7 +6,6 @@ import deltajava.objectstore.delta.storage.actions.AddFile;
 import deltajava.objectstore.delta.storage.util.ParquetUtil;
 
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Instant;
@@ -17,7 +16,8 @@ import java.util.*;
  * This implementation provides a simplified version of the Delta Lake protocol.
  */
 public class DeltaTable {
-    
+
+    private final Storage storage;
     private final String tablePath;
     private final DeltaLog deltaLog;
     
@@ -28,6 +28,7 @@ public class DeltaTable {
      * @throws IOException if an I/O error occurs
      */
     public DeltaTable(Storage storage, String tablePath) throws IOException {
+        this.storage = storage;
         this.tablePath = tablePath;
         this.deltaLog = new DeltaLog(storage, tablePath);
 
@@ -67,21 +68,32 @@ public class DeltaTable {
         String fileId = UUID.randomUUID().toString();
         long timestamp = Instant.now().toEpochMilli();
         String fileName = String.format("part-%s.parquet", fileId);
+        String relativePath = "data/" + fileName;
+        String fullStoragePath = tablePath + "/" + relativePath;
         
-        // Create the full path to the data file
-        Path dataFilePath = Paths.get(tablePath, "data", fileName);
-        
-        // Write the records to a Parquet file
-        long fileSize = ParquetUtil.writeRecords(records, dataFilePath);
-
-
-        // Create an AddFile action
-        AddFile addFile = new AddFile(
-                "data/" + fileName,
-                fileSize,
-                timestamp);
-        
-        return List.of(addFile);
+        // Create a temporary file locally
+        java.nio.file.Path tempFilePath = java.nio.file.Files.createTempFile("delta-", ".parquet");
+        try {
+            // Write records to the temporary file
+            long fileSize = ParquetUtil.writeRecords(records, tempFilePath);
+            
+            // Read the temporary file into memory
+            byte[] fileData = java.nio.file.Files.readAllBytes(tempFilePath);
+            
+            // Write data to the actual storage
+            storage.writeObject(fullStoragePath, fileData);
+            
+            // Create an AddFile action
+            AddFile addFile = new AddFile(
+                    relativePath,
+                    fileSize,
+                    timestamp);
+            
+            return List.of(addFile);
+        } finally {
+            // Delete the temporary file
+            java.nio.file.Files.deleteIfExists(tempFilePath);
+        }
     }
     
     /**
@@ -98,9 +110,25 @@ public class DeltaTable {
 
         // Read each file and collect records
         for (AddFile addFile : activeFiles) {
-            Path filePath = Paths.get(tablePath.toString(), addFile.getPath());
-            List<Map<String, String>> fileRecords = ParquetUtil.readRecords(filePath);
-            allRecords.addAll(fileRecords);
+            String fullPath = tablePath + "/" + addFile.getPath();
+            
+            // Read the file data from storage
+            byte[] fileData = storage.readObject(fullPath);
+            
+            // Create a temporary file to read with ParquetUtil
+            java.nio.file.Path tempFilePath = java.nio.file.Files.createTempFile("delta-read-", ".parquet");
+            
+            try {
+                // Write the data to the temporary file
+                java.nio.file.Files.write(tempFilePath, fileData);
+                
+                // Read records from the temporary file
+                List<Map<String, String>> fileRecords = ParquetUtil.readRecords(tempFilePath);
+                allRecords.addAll(fileRecords);
+            } finally {
+                // Clean up the temporary file
+                java.nio.file.Files.deleteIfExists(tempFilePath);
+            }
         }
 
         return allRecords;

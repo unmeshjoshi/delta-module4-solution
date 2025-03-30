@@ -20,9 +20,8 @@ public class ObjectStoreCluster implements AutoCloseable {
     private final Client client;
     private final List<ServerNode> serverNodes;
     
-    public ObjectStoreCluster(MessageBus messageBus, Path tempDir, int numServers) {
-        this.messageBus = messageBus;
-        
+    public ObjectStoreCluster(Path tempDir, int numServers) {
+        this.messageBus = new MessageBus();
         // Create server nodes
         serverNodes = new ArrayList<>();
         for (int i = 0; i < numServers; i++) {
@@ -44,11 +43,13 @@ public class ObjectStoreCluster implements AutoCloseable {
     }
     
     public void start() {
+        messageBus.start();
         // Server nodes are already registered with MessageBus in their constructor
         logger.info("Started ObjectStore cluster with {} servers", serverNodes.size());
     }
     
     public void stop() {
+        messageBus.stop();
         // No need to stop servers as they don't have a stop method
         logger.info("Stopped ObjectStore cluster");
     }
