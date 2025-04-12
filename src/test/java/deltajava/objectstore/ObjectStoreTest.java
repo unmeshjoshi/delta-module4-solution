@@ -16,30 +16,21 @@ import java.util.Collections;
 import static org.junit.jupiter.api.Assertions.*;
 
 class ObjectStoreTest {
-    private MessageBus messageBus;
-    private NetworkEndpoint clientEndpoint;
-    private NetworkEndpoint serverEndpoint;
+
     private Client client;
-    private Server server;
-    private LocalStorageNode storageNode;
+    private ObjectStoreCluster cluster;
 
     @BeforeEach
     void setUp(@TempDir Path tempDir) throws Exception {
         // Initialize components
-        messageBus = new MessageBus();
-        clientEndpoint = new NetworkEndpoint("localhost", 8080);
-        serverEndpoint = new NetworkEndpoint("localhost", 8081);
-        storageNode = new LocalStorageNode(tempDir.toString());
-        server = new Server("server1", storageNode, messageBus, serverEndpoint);
-        client = new Client(messageBus, clientEndpoint, Collections.singletonList(serverEndpoint));
-
-        // Start MessageBus
-        messageBus.start();
+        cluster = new ObjectStoreCluster(tempDir, 1);
+        cluster.start();
+        client = cluster.getClient();
     }
 
     @AfterEach
     void tearDown() {
-        messageBus.stop();
+        cluster.stop();
     }
 
     @Test

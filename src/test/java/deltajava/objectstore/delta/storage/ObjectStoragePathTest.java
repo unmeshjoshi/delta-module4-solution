@@ -4,6 +4,7 @@ import deltajava.network.MessageBus;
 import deltajava.network.NetworkEndpoint;
 import deltajava.objectstore.Client;
 import deltajava.objectstore.LocalStorageNode;
+import deltajava.objectstore.ObjectStoreCluster;
 import deltajava.objectstore.Server;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -22,31 +23,20 @@ class ObjectStoragePathTest {
     @TempDir
     Path tempDir;
     
-    private MessageBus messageBus;
-    private Client client;
-    private Server server;
-    private NetworkEndpoint clientEndpoint;
-    private NetworkEndpoint serverEndpoint;
-    private LocalStorageNode storageNode;
+    private ObjectStoreCluster cluster;
+
     private ObjectStorage storage;
     
     @BeforeEach
     void setUp() throws IOException {
-        messageBus = new MessageBus();
-        clientEndpoint = new NetworkEndpoint("localhost", 9190);
-        serverEndpoint = new NetworkEndpoint("localhost", 9191);
-        storageNode = new LocalStorageNode(tempDir.toString());
-        server = new Server("testServer", storageNode, messageBus, serverEndpoint);
-        client = new Client(messageBus, clientEndpoint, Arrays.asList(serverEndpoint));
-        messageBus.registerHandler(serverEndpoint, server);
-        messageBus.registerHandler(clientEndpoint, client);
-        messageBus.start();
-        storage = new ObjectStorage(client);
+        cluster = new ObjectStoreCluster(tempDir, 3);
+        cluster.start();
+        storage = new ObjectStorage(cluster.getClient());
     }
     
     @AfterEach
     void tearDown() {
-        messageBus.stop();
+        cluster.stop();
     }
     
     @Test

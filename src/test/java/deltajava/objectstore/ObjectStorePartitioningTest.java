@@ -1,7 +1,7 @@
 package deltajava.objectstore;
 
-import deltajava.network.MessageBus;
 import deltajava.network.NetworkEndpoint;
+import deltajava.objectstore.ObjectStoreCluster.ServerNode;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -14,44 +14,20 @@ import java.util.Objects;
 import java.util.Random;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class ObjectStorePartitioningTest {
-    private MessageBus messageBus;
     private Client client;
     private NetworkEndpoint clientEndpoint;
-    private List<ServerNode> serverNodes;
+    private ObjectStoreCluster cluster;
 
     @BeforeEach
     void setUp(@TempDir Path tempDir) {
-        messageBus = new MessageBus();
-        clientEndpoint = new NetworkEndpoint("localhost", 8080);
-        
-        // Create 10 servers
         int numServers = 10;
-        serverNodes = new ArrayList<>();
-
-        for (int i = 0; i < numServers; i++) {
-            // Create server node with all components
-            ServerNode node = new ServerNode(
-                "server-" + i,
-                new LocalStorageNode(tempDir.resolve("server" + i).toString()),
-                new NetworkEndpoint("localhost", 8081 + i)
-            );
-            node.server = new Server(node.id, node.storage, messageBus, node.endpoint);
-            serverNodes.add(node);
-        }
-
-        // Create client with all server endpoints
-        client = new Client(messageBus, clientEndpoint, 
-            serverNodes.stream()
-                .map(node -> node.endpoint)
-                .collect(Collectors.toList()));
-
-        // Start message bus
-        messageBus.start();
+        cluster = new ObjectStoreCluster(tempDir, numServers);
+        cluster.start();
+        client = cluster.getClient();
     }
 
     @Test
@@ -78,7 +54,7 @@ class ObjectStorePartitioningTest {
 
         // Verify data distribution
         System.out.println("\nData Distribution After Single Insert:");
-        for (ServerNode node : serverNodes) {
+        for (ServerNode node : cluster.getServerNodes()) {
             int count = countObjectsForServer(node.storage);
             System.out.printf("Server %s (%s): %d objects%n", 
                 node.id, 
@@ -110,7 +86,7 @@ class ObjectStorePartitioningTest {
 
         // Verify data distribution
         System.out.println("\nData Distribution After Batch Insert:");
-        for (ServerNode node : serverNodes) {
+        for (ServerNode node : cluster.getServerNodes()) {
             int count = countObjectsForServer(node.storage);
             System.out.printf("Server %s (%s): %d objects%n", 
                 node.id, 
@@ -147,7 +123,7 @@ class ObjectStorePartitioningTest {
 
         // Verify data distribution
         System.out.println("\nData Distribution After Concurrent Insert:");
-        for (ServerNode node : serverNodes) {
+        for (ServerNode node : cluster.getServerNodes()) {
             int count = countObjectsForServer(node.storage);
             System.out.printf("Server %s (%s): %d objects%n", 
                 node.id, 
@@ -178,18 +154,6 @@ class ObjectStorePartitioningTest {
         }
     }
 
-    private static class ServerNode {
-        final String id;
-        final LocalStorageNode storage;
-        final NetworkEndpoint endpoint;
-        Server server;
-
-        ServerNode(String id, LocalStorageNode storage, NetworkEndpoint endpoint) {
-            this.id = id;
-            this.storage = storage;
-            this.endpoint = endpoint;
-        }
-    }
 
     private static class CustomerProfile implements Serializable {
         private static final long serialVersionUID = 1L;
