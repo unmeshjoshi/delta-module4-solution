@@ -155,19 +155,7 @@ public class OptimisticTransaction extends Transaction {
      * @throws IOException if an I/O error occurs
      */
     public List<Map<String, String>> readAll() throws IOException {
-        List<Map<String, String>> allRecords = new ArrayList<>();
-
-        // Get all active files at a snapshot
-        List<AddFile> activeFiles = snapshot.getAllFiles();
-
-        // Read each file and collect records
-        for (AddFile addFile : activeFiles) {
-            Path filePath = Paths.get(tablePath.toString(), addFile.getPath());
-            List<Map<String, String>> fileRecords = ParquetUtil.readRecords(filePath);
-            allRecords.addAll(fileRecords);
-        }
-
-        return allRecords;
+       return new DeltaTable(storage, tablePath.toString()).readAllAt(snapshot);
     }
 
     @Override

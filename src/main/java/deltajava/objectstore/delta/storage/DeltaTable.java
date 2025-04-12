@@ -7,7 +7,6 @@ import deltajava.objectstore.delta.storage.util.ParquetUtil;
 
 import java.io.IOException;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.time.Instant;
 import java.util.*;
 
@@ -103,25 +102,29 @@ public class DeltaTable {
      * @throws IOException if an I/O error occurs
      */
     public List<Map<String, String>> readAll() throws IOException {
+        return readAllAt(deltaLog.snapshot());
+    }
+
+    public List<Map<String, String>> readAllAt(Snapshot snapshot) throws IOException {
         List<Map<String, String>> allRecords = new ArrayList<>();
 
         // Get all active files at a snapshot
-        List<AddFile> activeFiles = deltaLog.snapshot().getAllFiles();
+        List<AddFile> activeFiles = snapshot.getAllFiles();
 
         // Read each file and collect records
         for (AddFile addFile : activeFiles) {
             String fullPath = tablePath + "/" + addFile.getPath();
-            
+
             // Read the file data from storage
             byte[] fileData = storage.readObject(fullPath);
-            
+
             // Create a temporary file to read with ParquetUtil
-            java.nio.file.Path tempFilePath = java.nio.file.Files.createTempFile("delta-read-", ".parquet");
-            
+            Path tempFilePath = java.nio.file.Files.createTempFile("delta-read-", ".parquet");
+
             try {
                 // Write the data to the temporary file
                 java.nio.file.Files.write(tempFilePath, fileData);
-                
+
                 // Read records from the temporary file
                 List<Map<String, String>> fileRecords = ParquetUtil.readRecords(tempFilePath);
                 allRecords.addAll(fileRecords);

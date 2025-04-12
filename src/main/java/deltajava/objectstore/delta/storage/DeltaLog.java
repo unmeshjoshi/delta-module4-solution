@@ -84,6 +84,7 @@ public class DeltaLog {
         }
         String logFileName = LogFileName.fromVersion(version).getPathIn(logPath);
         storage.writeObject(logFileName, JsonUtil.toJson(actions).getBytes());
+        update();
     }
 
     public Snapshot snapshot() throws IOException {

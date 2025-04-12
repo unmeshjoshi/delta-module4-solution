@@ -4,6 +4,7 @@ import deltajava.network.MessageBus;
 import deltajava.network.NetworkEndpoint;
 import deltajava.objectstore.Client;
 import deltajava.objectstore.LocalStorageNode;
+import deltajava.objectstore.ObjectStoreCluster;
 import deltajava.objectstore.Server;
 import deltajava.objectstore.delta.storage.actions.Action;
 import deltajava.objectstore.delta.storage.actions.AddFile;
@@ -23,36 +24,28 @@ import java.util.stream.Collectors;
 import static org.junit.jupiter.api.Assertions.*;
 
 class OptimisticTransactionTest {
+    private static final String TABLE_PATH = "customer_table";
+
     @TempDir
     Path tempDir;
 
-    private MessageBus messageBus;
     private Client client;
-    private Server server;
-    private NetworkEndpoint clientEndpoint;
-    private NetworkEndpoint serverEndpoint;
-    private LocalStorageNode storageNode;
+    private ObjectStoreCluster cluster;
     private ObjectStorage storage;
     private String customersTablePath;
 
     @BeforeEach
     void setUp() throws IOException {
-        messageBus = new MessageBus();
-        clientEndpoint = new NetworkEndpoint("localhost", 9190);
-        serverEndpoint = new NetworkEndpoint("localhost", 9191);
-        storageNode = new LocalStorageNode(tempDir.toString());
-        server = new Server("testServer", storageNode, messageBus, serverEndpoint);
-        client = new Client(messageBus, clientEndpoint, Collections.singletonList(serverEndpoint));
-        messageBus.registerHandler(serverEndpoint, server);
-        messageBus.registerHandler(clientEndpoint, client);
-        messageBus.start();
+        cluster = new ObjectStoreCluster(tempDir, 1);
+        cluster.start();
+        client = cluster.getClient();
         storage = new ObjectStorage(client);
-        customersTablePath = tempDir.resolve("customers_table").toString();
+        customersTablePath = TABLE_PATH;
     }
 
     @AfterEach
     void tearDown() {
-        messageBus.stop();
+        cluster.stop();
     }
     
     private List<CustomerProfile> createSampleCustomers() {
@@ -95,6 +88,7 @@ class OptimisticTransactionTest {
         // Create transaction and insert customers
         OptimisticTransaction transaction = new OptimisticTransaction(storage, customersTablePath);
         List<Action> actions = transaction.insert(customerMaps);
+        transaction.addAction(actions.get(0));
         transaction.commit();
         
         // Verify actions were created
